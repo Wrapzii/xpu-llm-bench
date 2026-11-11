@@ -69,6 +69,10 @@ COLUMNS = [
     "flags",
     "valid",
     "reason",
+    # Added later; appended so earlier CSV column positions stay put.
+    "decode_tok_s_per_user_steady",
+    "decode_tok_s_total_steady",
+    "steady_window_s",
 ]
 
 # Short table for humans: one comparable table, steps/s next to tok/s.
@@ -80,6 +84,8 @@ SUMMARY_COLUMNS = [
     "steps_s_per_user",
     "decode_tok_s_per_user",
     "decode_tok_s_total",
+    "decode_tok_s_per_user_steady",
+    "decode_tok_s_total_steady",
     "tokens_per_step",
     "hit_rate",
     "prefill_tok_s",
@@ -97,6 +103,8 @@ NUMERIC = {
     "tpot_ms",
     "decode_tok_s_per_user",
     "decode_tok_s_total",
+    "decode_tok_s_per_user_steady",
+    "decode_tok_s_total_steady",
     "steps_s_per_user",
     "steps_s_total",
     "tokens_per_step",

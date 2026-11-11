@@ -232,10 +232,16 @@ class LadderSpec(BaseModel):
     # Keep decoding to exactly output_tokens_per_rung (vLLM ignore_eos). EOS
     # positions are still detected (skip_special_tokens=false) and flagged.
     ignore_eos: bool = True
-    # A measured window with fewer verify steps than this is SHORT_WINDOW.
+    # A measured window with fewer verify steps than this is SHORT_WINDOW; a
+    # multi-user window whose all-decoding overlap has fewer steps for any
+    # session is SHORT_OVERLAP (the steady-state fields are left empty).
     min_window_steps: int = 20
     # Poll /metrics this often during a window (running / waiting / KV).
     metrics_poll_s: float = 1.0
+    # Before each measured window, wait up to this long for the server to
+    # report no running or waiting requests (the gauges can still count the
+    # runner's own just-finished requests). Still busy after it: CONCURRENT_CLIENT.
+    quiesce_timeout_s: float = Field(default=10.0, ge=0.0)
     # "auto" (default): 8K, 32K, 64K, 131K, then +auto_step_tokens (196K,
     # 262K, ...) up to the server's max_model_len (read from /v1/models or the
     # boot log at preflight) minus ctx_headroom_tokens, with that maximum as

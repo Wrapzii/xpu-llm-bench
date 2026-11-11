@@ -26,9 +26,16 @@ FLAGS: dict[str, str] = {
     "DERIVED_STEPS": "Stream gave no per-step token counts; verify steps taken from server drafts.",
     "K_UNDECLARED": "Spec did not declare k; k was taken from draft_tokens/drafts.",
     "SHORT_WINDOW": "Fewer verify steps per session than ladder.min_window_steps.",
+    "SHORT_OVERLAP": (
+        "Multi-user window: some session had fewer than ladder.min_window_steps verify steps while all "
+        "sessions were decoding; the steady-state decode fields are left empty."
+    ),
     "EOS_IN_WINDOW": "Model emitted EOS inside the window (ignore_eos kept decoding).",
     "PREEMPTED": "Preemptions > 0 during the rung.",
-    "CONCURRENT_CLIENT": "More running/waiting requests than this runner's sessions (another client).",
+    "CONCURRENT_CLIENT": (
+        "Server still had running/waiting requests after the pre-window wait (ladder.quiesce_timeout_s), "
+        "or more during the window than this runner's sessions (another client)."
+    ),
     "FOREIGN_STACK": "Another vLLM stack (different container) is resident on the host.",
     "PROTECTED_PORT": "Server bound to a protected production port (only possible on imported rows).",
     "RAM_FLOOR": "MemAvailable hit the floor; runner guard aborted.",
@@ -165,6 +172,7 @@ class QualityResult(BaseModel):
 # median across repeats; repeat_stats keeps every value plus min/max/stdev.
 REPEAT_METRICS: tuple[str, ...] = (
     "decode_tok_s_per_user",
+    "decode_tok_s_per_user_steady",
     "steps_s_per_user",
     "accepted_drafts_per_step",
     "hit_rate",
@@ -234,6 +242,13 @@ class RungResult(BaseModel):
     steps_s_total: float | None = None
     tpot_ms: float | None = None
     decode_window_s: float | None = None
+    # Steady state: only the interval where every session is decoding
+    # ([max first token, min last token]), so other sessions' prefill is not
+    # mixed in. One user: same as decode_tok_s_per_user / decode_window_s.
+    # Empty (None) with SHORT_OVERLAP when the overlap is too short.
+    decode_tok_s_per_user_steady: float | None = None
+    decode_tok_s_total_steady: float | None = None
+    steady_window_s: float | None = None  # overlap length (kept even with SHORT_OVERLAP)
     # MTP / speculation. hit_rate is the TRUE hit rate:
     # (delivered - verify_steps) / (k * verify_steps).
     accepted_drafts_per_step: float | None = None

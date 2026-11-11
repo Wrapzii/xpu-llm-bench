@@ -34,8 +34,8 @@ HOLLOW_FLAGS = {"NOT_AS_LABELED", "QSA_FALLBACK", "MIXED_PATH", "GRAPH_MISS", "H
                 "SPEC_COUNTER_BROKEN", "DRY_RUN"}
 TABLE_COLUMNS = [
     "rung_id", "phase", "users", "ctx_per_user", "prompt_type", "load_mode", "attention_path",
-    "decode_tok_s_per_user", "steps_s_per_user", "decode_tok_s_total", "tokens_per_step",
-    "accepted_drafts_per_step", "hit_rate", "prefill_tok_s", "ttft_ms", "tpot_ms", "itl_p50_ms", "itl_p99_ms",
+    "decode_tok_s_per_user", "steps_s_per_user", "decode_tok_s_total", "decode_tok_s_per_user_steady",
+    "decode_tok_s_total_steady", "tokens_per_step", "accepted_drafts_per_step", "hit_rate", "prefill_tok_s", "ttft_ms", "tpot_ms", "itl_p50_ms", "itl_p99_ms",
     "kv_cache_usage_max_pct", "mem_available_min_gib", "exit_reason", "flags", "valid",
 ]
 # Plain-words names for group headings.

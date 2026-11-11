@@ -186,12 +186,39 @@ over the window. Every verify step of every request counts one draft.
 snapshots are taken after growth and before the window, so prefill steps are
 excluded.
 
+**Steady state with several users.** All sessions of a `closed_all_decoding`
+window are sent together, but each request first prefills its new tail, so
+the first part of one session's decode window overlaps the other sessions'
+prefills. With short windows (the quick profile's 96 tokens) most of a
+per-request window can be prefill-contended, which makes the multi-user
+`decode_tok_s_per_user` (E_i / window_i) read low. The runner therefore also
+reports a steady-state rate over the interval in which every session is
+decoding: `[max_i first token_i, min_i last token_i]` (`steady_window_s`).
+Each session's token-bearing chunks that arrive inside that interval are
+counted (a chunk exactly at its start belongs to the step before, as in the
+per-request window); `decode_tok_s_per_user_steady` is the mean of
+tokens_i / `steady_window_s` and `decode_tok_s_total_steady` the sum. If any
+session has fewer than `ladder.min_window_steps` steps inside the overlap the
+two rates are left empty and the row is flagged `SHORT_OVERLAP`; raise
+`output_tokens_per_rung` to get a usable overlap. With one user the overlap is
+the request's own window, so the steady values equal the per-request ones.
+These fields are additional; `decode_tok_s_per_user` is unchanged, so older
+results stay comparable.
+
+**Quiescence before a window.** vLLM's `num_requests_running` /
+`num_requests_waiting` gauges can still count the runner's own requests from
+growth or the previous rung for a moment after they finish. Before the
+window's `before` snapshot the runner polls `/metrics` (every 0.25 s, up to
+`ladder.quiesce_timeout_s`, default 10 s) until both are 0. `CONCURRENT_CLIENT`
+is set only when the server is still busy after that wait, or when running +
+waiting during the window exceeds the runner's own sessions.
+
 **Repeats (`ladder.repeats`, `--repeats N`, default 1).** With N > 1 the
 decode window is measured N times back to back on the same context: the
 context is grown once, the same messages are re-sent for each repeat, and
 no reply is appended until all N windows are done (repeat 1's reply is the
 one kept, so later rungs see the same conversation as with N = 1).
-For decode tok/s, steps/s, accepted drafts/step, true hit rate and TTFT
+For decode tok/s (per-request and steady), steps/s, accepted drafts/step, true hit rate and TTFT
 the row stores the median across repeats, and `repeat_stats` keeps every
 per-repeat value with min, max and (N ≥ 3) the sample stdev. Totals are the
 median per user × users. Prefill is measured once per rung (from the growth
@@ -216,6 +243,7 @@ first). S_i = its verify steps. E = ΣE_i, S = ΣS_i.
 | `steps_s_per_user` (**headline**) | mean_i S_i / window_i |
 | `decode_tok_s_per_user` (next to it) | mean_i E_i / window_i |
 | `steps_s_total`, `decode_tok_s_total` | Σ over sessions |
+| `decode_tok_s_per_user_steady`, `decode_tok_s_total_steady`, `steady_window_s` | mean / Σ of tokens_i inside the all-decoding overlap / its length (§3) |
 | `tokens_per_step` | E / S. Identity: tok/s = steps/s × tokens_per_step |
 | `accepted_drafts_per_step` | E/S − 1 (0..k) |
 | **`hit_rate` (true hit rate)** | **(E − S) / (k × S)**: the fraction of proposed draft slots that became delivered tokens. It never reads the accepted-tokens counter, which some builds over-report (accepted > drafted, i.e. above 100%). |

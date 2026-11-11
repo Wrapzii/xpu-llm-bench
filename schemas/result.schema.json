@@ -995,6 +995,18 @@
           "default": null,
           "title": "Decode Tok S Per User"
         },
+        "decode_tok_s_per_user_steady": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decode Tok S Per User Steady"
+        },
         "decode_tok_s_total": {
           "anyOf": [
             {
@@ -1006,6 +1018,18 @@
           ],
           "default": null,
           "title": "Decode Tok S Total"
+        },
+        "decode_tok_s_total_steady": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decode Tok S Total Steady"
         },
         "decode_window_s": {
           "anyOf": [
@@ -1461,6 +1485,18 @@
           ],
           "default": null,
           "title": "Started Utc"
+        },
+        "steady_window_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Steady Window S"
         },
         "steps_s_per_user": {
           "anyOf": [

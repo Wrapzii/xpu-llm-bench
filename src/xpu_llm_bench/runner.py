@@ -49,6 +49,7 @@ from xpu_llm_bench.metrics import (
     per_pos_sum,
     percentile,
     spec_counter_check,
+    steady_window,
     stream_stats,
     system_window,
     true_hit_rate,
@@ -308,6 +309,7 @@ class Session:
 
 METRICS_FETCH_ATTEMPTS = 4
 METRICS_RETRY_BASE_S = 1.0
+QUIESCE_POLL_S = 0.25  # /metrics poll interval while waiting for the server to go idle
 
 
 @dataclass
@@ -418,6 +420,8 @@ def apply_repeats(row: RungResult, extra: list[dict[str, float | None] | None]) 
         row.decode_tok_s_total = row.decode_tok_s_per_user * users
     if row.steps_s_per_user is not None:
         row.steps_s_total = row.steps_s_per_user * users
+    if row.decode_tok_s_per_user_steady is not None:
+        row.decode_tok_s_total_steady = row.decode_tok_s_per_user_steady * users
 
 
 def _host_exec(spec: RunSpec) -> HostExec:
@@ -977,9 +981,45 @@ class Runner:
             flags.append("MIXED_PATH")
         return sorted(set(flags)), batch, sizes
 
+    def _quiesce(self, rung: Rung) -> tuple[dict[str, float], float]:
+        """Scrape /metrics until no request is running or waiting, for at most
+        ``ladder.quiesce_timeout_s``. vLLM can still count the runner's own
+        just-finished requests (growth, previous rung) for a moment.
+
+        Returns the last snapshot (the window's ``before``) and running + waiting in it.
+        """
+        names = self.spec.metrics
+        timeout = self.spec.ladder.quiesce_timeout_s
+        waited = 0.0
+        while True:
+            snap = parse_prometheus(self._metrics_text())
+            busy = (metric_value(snap, names.running) or 0.0) + (metric_value(snap, names.waiting) or 0.0)
+            if busy <= 0 or waited >= timeout:
+                break
+            step = min(QUIESCE_POLL_S, timeout - waited)
+            self.sleep(step)
+            waited += step
+        if waited:
+            state = "idle" if busy <= 0 else f"still busy ({busy:.0f} running+waiting)"
+            self._runlog(f"{rung.rung_id}: waited {waited:.2f}s for the server to go idle: {state}")
+        return snap, busy
+
+    def _steady(self, rung: Rung, collected: dict[int, StreamResult]) -> tuple[list[float] | None, float | None]:
+        """Per-user decode tok/s inside the all-decoding overlap, and its length.
+
+        One session: the overlap is its own decode window, so the values equal
+        ``decode_tok_s_per_user`` / ``decode_window_s`` (SHORT_WINDOW covers a
+        short one). Several sessions: (None, window) when any session has fewer
+        than ``ladder.min_window_steps`` verify steps inside the overlap.
+        """
+        sw = steady_window([(collected[s].token_times, collected[s].chunk_tokens) for s in rung.decoding_sessions])
+        if len(rung.decoding_sessions) > 1 and sw.min_steps < self.spec.ladder.min_window_steps:
+            return None, sw.window_s
+        return sw.tok_s_each, sw.window_s
+
     def _window(self, rung: Rung, sessions: dict[int, Session]):
         """One measured decode window on the sessions' current context."""
-        before = parse_prometheus(self._metrics_text())
+        before, busy_before = self._quiesce(rung)
         t_window = time.time()
         sampler = WindowSampler(self._metrics_text, self.spec.metrics, self.spec.ladder.metrics_poll_s, self._procs)
         sampler.start()
@@ -1004,7 +1044,7 @@ class Runner:
         samples = sampler.stop()
         after = parse_prometheus(self._metrics_text())
         log_lines = bootlog.lines_since(self._logs_text(), t_window - 1.0)
-        return collected, samples, before, after, log_lines, t_window
+        return collected, samples, before, after, log_lines, t_window, busy_before
 
     def _repeat_window(self, rung: Rung, sessions: dict[int, Session], k: int | None) -> tuple[dict[str, float | None] | None, str | None]:
         """Re-measure the decode window on the same context (no regrow, replies not appended).
@@ -1013,7 +1053,7 @@ class Runner:
         Prefill is not re-measured (the context is not regrown); the caller
         carries the rung's single prefill value.
         """
-        collected, _samples, before, after, _logs, _t = self._window(rung, sessions)
+        collected, _samples, before, after, _logs, _t, _busy = self._window(rung, sessions)
         errs = []
         for sid in rung.decoding_sessions:
             r = collected.get(sid)
@@ -1041,6 +1081,7 @@ class Runner:
             steps_each = [(share / c.window_s) if c.window_s else None for c in chunk_stats]
         return {
             "decode_tok_s_per_user": _mean([c.decode_tok_s for c in chunk_stats]),
+            "decode_tok_s_per_user_steady": _mean(self._steady(rung, collected)[0] or []),
             "steps_s_per_user": _mean(steps_each),
             "accepted_drafts_per_step": (E / S - 1.0) if S else None,
             "hit_rate": true_hit_rate(E, S, k) if (k and S) else None,
@@ -1099,7 +1140,7 @@ class Runner:
             return self._failed_row(base, rung, sessions, grow_errors, timed_out=False, since=time.time() - 600)
 
         # Measured window (repeat 1; more repeats below on the same context).
-        collected, samples, before, after, log_lines, t_window = self._window(rung, sessions)
+        collected, samples, before, after, log_lines, t_window, busy_before = self._window(rung, sessions)
 
         errors: list[str] = []
         timeouts = 0
@@ -1165,14 +1206,17 @@ class Runner:
             flags.append("SPEC_COUNTER_BROKEN")
         if any(c.verify_steps < self.spec.ladder.min_window_steps for c in chunk_stats):
             flags.append("SHORT_WINDOW")
+        steady_each, overlap_s = self._steady(rung, collected)
+        if steady_each is None and len(chunk_stats) > 1:
+            flags.append("SHORT_OVERLAP")
         if eos_seen:
             flags.append("EOS_IN_WINDOW")
         if sysm.preemptions:
             flags.append("PREEMPTED")
         running_max = max(samples.running) if samples.running else None
         waiting_max = max(samples.waiting) if samples.waiting else None
-        r0 = metric_value(before, self.spec.metrics.running) or 0.0
-        if r0 > 0 or (running_max or 0) + (waiting_max or 0) > len(rung.decoding_sessions):
+        # busy_before: still running/waiting after the pre-window quiescence wait.
+        if busy_before > 0 or (running_max or 0) + (waiting_max or 0) > len(rung.decoding_sessions):
             flags.append("CONCURRENT_CLIENT")
         if samples.other_stacks:
             flags.append("FOREIGN_STACK")
@@ -1263,6 +1307,9 @@ class Runner:
             ttft_ms=_mean([s.ttft_ms for s in sstats]),
             decode_tok_s_per_user=_mean(tok_user_each),
             decode_tok_s_total=_sum(tok_user_each),
+            decode_tok_s_per_user_steady=_mean(steady_each or []),
+            decode_tok_s_total_steady=_sum(steady_each or []),
+            steady_window_s=overlap_s,
             steps_s_per_user=_mean(steps_user_each),
             steps_s_total=_sum(steps_user_each),
             tpot_ms=_mean(tpots),

@@ -373,3 +373,56 @@ class ChunkStats:
     def steps_s(self) -> float | None:
         w = self.window_s
         return self.verify_steps / w if w else None
+
+
+@dataclass
+class SteadyWindow:
+    """The interval in which every session of a window is decoding.
+
+    Sessions are sent together, but each one first prefills, so the start of
+    one session's decode overlaps the others' prefill. The steady window is
+    ``[max(first token), min(last token)]``: after the last session's first
+    token and before the first session's last token, all of them decode.
+    ``tokens[i]`` / ``steps[i]`` are session i's tokens and token-bearing
+    chunks (verify steps) that arrive inside it, counted the same way as
+    ChunkStats (a chunk exactly at the start belongs to the step before).
+    """
+
+    t_start: float | None
+    t_end: float | None
+    tokens: list[int]
+    steps: list[int]
+
+    @property
+    def window_s(self) -> float | None:
+        if self.t_start is None or self.t_end is None or self.t_end <= self.t_start:
+            return None
+        return self.t_end - self.t_start
+
+    @property
+    def min_steps(self) -> int:
+        return min(self.steps) if self.steps else 0
+
+    @property
+    def tok_s_each(self) -> list[float] | None:
+        w = self.window_s
+        return [n / w for n in self.tokens] if w else None
+
+
+def steady_window(streams: list[tuple[list[float], list[int]]]) -> SteadyWindow:
+    """Overlap of the sessions' decode intervals.
+
+    ``streams`` holds one ``(token_times, chunk_tokens)`` pair per session:
+    the arrival time of each token-bearing chunk and the tokens it carried.
+    """
+    if not streams or any(not times for times, _ in streams):
+        return SteadyWindow(t_start=None, t_end=None, tokens=[0] * len(streams), steps=[0] * len(streams))
+    t_start = max(times[0] for times, _ in streams)
+    t_end = min(times[-1] for times, _ in streams)
+    tokens: list[int] = []
+    steps: list[int] = []
+    for times, counts in streams:
+        inside = [n for t, n in zip(times, counts, strict=False) if t_start < t <= t_end]
+        tokens.append(sum(inside))
+        steps.append(len(inside))
+    return SteadyWindow(t_start=t_start, t_end=t_end, tokens=tokens, steps=steps)
