@@ -73,34 +73,37 @@ def build_session1_then_join(spec: RunSpec) -> list[Rung]:
     ctxs = ladder_contexts(spec)
     for ptype in spec.prompts.types:
         for mode in ladder.load_modes:
-            for ctx in ctxs:
-                out.append(
-                    Rung(
-                        rung_id=_rung_id(ptype, mode, 1, ctx, "S"),
-                        prompt_type=ptype,
-                        load_mode=mode,
-                        users=1,
-                        ctx_per_user=ctx,
-                        live_sessions=(1,),
-                        decoding_sessions=(1,),
-                        grow_sessions=(1,),
-                        measures_prefill=True,
-                        output_tokens=ladder.output_tokens_per_rung,
-                        family=str(ptype),
-                        phase="S",
-                        ctx_targets=(ctx,),
+            if 1 in ladder.concurrency_steps:
+                for ctx in ctxs:
+                    out.append(
+                        Rung(
+                            rung_id=_rung_id(ptype, mode, 1, ctx, "S"),
+                            prompt_type=ptype,
+                            load_mode=mode,
+                            users=1,
+                            ctx_per_user=ctx,
+                            live_sessions=(1,),
+                            decoding_sessions=(1,),
+                            grow_sessions=(1,),
+                            measures_prefill=True,
+                            output_tokens=ladder.output_tokens_per_rung,
+                            family=str(ptype),
+                            phase="S",
+                            ctx_targets=(ctx,),
+                        )
                     )
-                )
             join = ladder.join_ctx_tokens or ctxs[0]
             c_ctxs = [c for c in ctxs if c >= join] or ctxs[-1:]
             if ladder.join_max_context_tokens:
                 c_ctxs = [c for c in c_ctxs if c <= ladder.join_max_context_tokens] or c_ctxs[:1]
             next_sid = 2
-            for n in ladder.concurrency_steps:
+            for n in (ladder.concurrency_session_steps or ladder.concurrency_steps):
                 if n <= 1:
                     continue
                 group = tuple(range(next_sid, next_sid + n))
                 next_sid += n
+                if n not in ladder.concurrency_steps:
+                    continue
                 for ctx in c_ctxs:
                     out.append(
                         Rung(
