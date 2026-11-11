@@ -181,6 +181,22 @@ ruff check src tests
 pytest
 ```
 
+### Fast concurrency subset
+
+Use the same resolved spec and profile for planning and running:
+
+```bash
+bench plan specs/generic-vllm.yaml --concurrency 1,4
+bench run specs/generic-vllm.yaml --concurrency 1,4
+```
+
+Only the requested concurrency steps are measured; they must be unique, positive,
+strictly increasing members of the resolved spec's `ladder.concurrency_steps`.
+The progressive ladder retains the full schedule's session IDs for comparable
+prompts while skipping unselected decode workloads. The manifest config records
+the selected steps and the original session-ID ladder. Contexts, output tokens,
+warmup, and metric definitions are not changed. Use the same subset when resuming.
+
 ## What a run records
 
 Every run directory describes itself:
@@ -286,19 +302,3 @@ These rules are enforced in code, and the tests check them:
 ## License
 
 No license has been chosen yet; until one is added, all rights are reserved.
-
-### Fast concurrency subset
-
-Use the same resolved spec and profile for planning and running:
-
-```bash
-bench plan specs/generic-vllm.yaml --concurrency 1,4
-bench run specs/generic-vllm.yaml --concurrency 1,4
-```
-
-Only the requested concurrency steps are measured; they must be unique, positive,
-strictly increasing members of the resolved spec's `ladder.concurrency_steps`.
-The progressive ladder retains the full schedule's session IDs for comparable
-prompts while skipping unselected decode workloads. The manifest config records
-the selected steps and the original session-ID ladder. Contexts, output tokens,
-warmup, and metric definitions are not changed. Use the same subset when resuming.
