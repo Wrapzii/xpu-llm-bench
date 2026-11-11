@@ -737,6 +737,8 @@ class Runner:
                 "boot_once": self.spec.ladder.boot_once,
                 "grow_monotonically": self.spec.ladder.grow_monotonically,
                 "shape": self.spec.ladder.shape,
+                "concurrency_steps": list(self.spec.ladder.concurrency_steps),
+                "concurrency_session_steps": list(self.spec.ladder.concurrency_session_steps or self.spec.ladder.concurrency_steps),
                 "temperature": self.spec.ladder.temperature,
                 "ignore_eos": self.spec.ladder.ignore_eos,
                 "prompt_style": self.spec.prompts.style,

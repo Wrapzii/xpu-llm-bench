@@ -63,6 +63,26 @@ def _apply_repeats(spec, n: int | None) -> None:
     spec.ladder.repeats = n
 
 
+def _add_concurrency(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--concurrency", "--concurrencies", metavar="N[,N...]", default=None,
+                   help="Measure only these increasing concurrency steps from the resolved spec (e.g. 1,4)")
+
+
+def _apply_concurrency(spec, value: str | None) -> None:
+    if value is None:
+        return
+    parts = value.split(",")
+    if any(not part.isascii() or not part.isdigit() for part in parts):
+        raise ValueError("--concurrency must be comma-separated positive integers")
+    steps = [int(part) for part in parts]
+    if not steps or any(n < 1 for n in steps) or steps != sorted(set(steps)):
+        raise ValueError("--concurrency must contain unique, strictly increasing positive integers")
+    if not set(steps).issubset(spec.ladder.concurrency_steps):
+        raise ValueError("--concurrency values must be steps in the resolved spec")
+    spec.ladder.concurrency_session_steps = list(spec.ladder.concurrency_steps)
+    spec.ladder.concurrency_steps = steps
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bench",
@@ -102,11 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_profile(plan)
     _add_repeats(plan)
+    _add_concurrency(plan)
 
     run = sub.add_parser("run", help="Drive the ladder against an OpenAI-compatible endpoint")
     run.add_argument("spec", type=Path)
     run.add_argument("--output-dir", type=Path, default=Path("results"))
     _add_repeats(run)
+    _add_concurrency(run)
     run.add_argument("--resume", action="store_true", help="Skip rungs already completed in the output dir")
     run.add_argument(
         "--dry-run",
@@ -236,6 +258,7 @@ def _main(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if args.cmd == "plan":
         spec = load_spec(args.spec, profile=args.profile)
         _apply_repeats(spec, args.repeats)
+        _apply_concurrency(spec, args.concurrency)
         mem, basis = None, "live"
         if args.mem_available is not None:
             mem, basis = args.mem_available, "given"
@@ -253,6 +276,7 @@ def _main(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if args.cmd == "run":
         spec = load_spec(args.spec, profile=args.profile)
         _apply_repeats(spec, args.repeats)
+        _apply_concurrency(spec, args.concurrency)
         print(describe_site())
         if spec.ladder.shape == "grid":
             print(GRID_WARNING, file=sys.stderr)

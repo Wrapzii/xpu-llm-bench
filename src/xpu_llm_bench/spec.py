@@ -257,6 +257,8 @@ class LadderSpec(BaseModel):
     # on to the next user count instead of aborting the run.
     stop_at_ceiling: bool = True
     concurrency_steps: list[int] = Field(default_factory=lambda: [1, 2, 4, 8])
+    # Original ladder steps retain per-concurrency session IDs under CLI selection.
+    concurrency_session_steps: list[int] | None = Field(default=None, exclude=True)
     # Measure each rung's decode window this many times on the same context
     # (the context is not regrown between repeats). Rows report the median with
     # min/max (stdev from 3). Quality checks still run once per rung.
