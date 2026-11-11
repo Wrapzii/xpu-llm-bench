@@ -64,7 +64,7 @@ def _apply_repeats(spec, n: int | None) -> None:
 
 
 def _add_concurrency(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--concurrency", metavar="N[,N...]", default=None,
+    p.add_argument("--concurrency", "--concurrencies", metavar="N[,N...]", default=None,
                    help="Measure only these increasing concurrency steps from the resolved spec (e.g. 1,4)")
 
 

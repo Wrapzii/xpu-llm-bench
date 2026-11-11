@@ -67,3 +67,11 @@ def test_subset_preserves_full_schedule_session_ids(monkeypatch):
     assert main(["run", str(path), "--concurrency", "1,4"]) == 0
     selected = build_schedule(captured[0])
     assert [(r.rung_id, r.live_sessions) for r in selected] == [(r.rung_id, r.live_sessions) for r in original if r.users in (1, 4)]
+
+
+def test_plural_concurrencies_option(monkeypatch):
+    import xpu_llm_bench.cli as cli
+    captured = []
+    monkeypatch.setattr(cli, "run_spec", lambda spec, *a, **kw: captured.append(spec) or [])
+    assert main(["run", str(SPECS / "generic-vllm.yaml"), "--concurrencies", "1,4"]) == 0
+    assert captured[0].ladder.concurrency_steps == [1, 4]
